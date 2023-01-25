@@ -77,7 +77,7 @@ public class SwerveDrive extends SubsystemBase {
         thetaController.setTolerance(kThetaPositionTolerance, kThetaVelocityTolerance);
 
         var stateStdDevs = VecBuilder.fill(0.1, 0.1, 0.1);
-        var visionStdDevs = VecBuilder.fill(1, 1, 1);
+        var visionStdDevs = VecBuilder.fill(1, 1, 0.1);
         poseEstimator = new SwerveDrivePoseEstimator(
             kinematics,
             getGyroYaw(),

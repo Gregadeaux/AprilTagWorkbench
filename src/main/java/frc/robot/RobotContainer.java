@@ -13,12 +13,12 @@ import java.util.List;
 import java.util.Random;
 import java.util.stream.Collectors;
 
-import org.photonvision.CameraProperties;
 import org.photonvision.PhotonCamera;
 import org.photonvision.PhotonCameraSim;
 import org.photonvision.VisionSystemSim;
 import org.photonvision.targeting.PhotonPipelineResult;
 import org.photonvision.targeting.TargetCorner;
+import org.photonvision.vision.estimation.CameraProperties;
 
 import edu.wpi.first.apriltag.AprilTag;
 import edu.wpi.first.apriltag.AprilTagFieldLayout;
@@ -56,6 +56,7 @@ public class RobotContainer {
     private NetworkTableInstance instance;
     private final PhotonCamera camera1;
     private final PhotonCamera camera2;
+    private final PhotonCamera camera3;
     private final List<PhotonCamera> cameras;
     private List<PhotonPipelineResult> lastResults;
     private final VisionSystemSim visionSim;
@@ -67,9 +68,10 @@ public class RobotContainer {
         
         instance = NetworkTableInstance.getDefault();
 
-        camera1 = new PhotonCamera(instance, "front");
-        camera2 = new PhotonCamera(instance, "back");
-        cameras = List.of(camera1, camera2);
+        camera1 = new PhotonCamera(instance, "front-left");
+        camera2 = new PhotonCamera(instance, "front-right");
+        camera3 = new PhotonCamera(instance, "back");
+        cameras = List.of(camera1, camera2, camera3);
         PhotonCamera.setVersionCheckEnabled(false);
         lastResults = new ArrayList<>(cameras.size());
         cameras.forEach(c -> lastResults.add(new PhotonPipelineResult()));
@@ -87,35 +89,54 @@ public class RobotContainer {
             new Transform3d( // robot to camera
                 new Translation3d(
                     Units.inchesToMeters(10),
+                    Units.inchesToMeters(10),
+                    Units.inchesToMeters(25)
+                ),
+                new Rotation3d(
+                    0,
+                    -Math.toRadians(18),
+                    Math.toRadians(30)
+                )
+            )
+        );
+
+        visionSim.addCamera(
+            new PhotonCameraSim(
+                camera2,
+                CameraProperties.LL2_640_480()
+            ),
+            new Transform3d( // robot to camera
+                new Translation3d(
+                    Units.inchesToMeters(10),
+                    Units.inchesToMeters(-10),
+                    Units.inchesToMeters(25)
+                ),
+                new Rotation3d(
+                    0,
+                    -Math.toRadians(18),
+                    Math.toRadians(-30)
+                )
+            )
+        );   
+
+        visionSim.addCamera(
+            new PhotonCameraSim(
+                camera3,
+                CameraProperties.LL2_640_480()
+            ),
+            new Transform3d( // robot to camera
+                new Translation3d(
+                    Units.inchesToMeters(-10),
                     0,
                     Units.inchesToMeters(25)
                 ),
                 new Rotation3d(
                     0,
                     -Math.toRadians(18),
-                    0
+                    Math.PI
                 )
             )
-        );
-        // visionSim.getCameraSim("front").ifPresent(camsim -> camsim.enableRawStream(false));
-        // visionSim.addCamera(
-        //     new PhotonCameraSim(
-        //         camera2,
-        //         CameraProperties.PI4_PICAM2_480p
-        //     ),
-        //     new Transform3d( // robot to camera
-        //         new Translation3d(
-        //             Units.inchesToMeters(-10),
-        //             0,
-        //             Units.inchesToMeters(25)
-        //         ),
-        //         new Rotation3d(
-        //             0,
-        //             -Math.toRadians(18),
-        //             Math.PI
-        //         )
-        //     )
-        // );            
+        );      
 
         try {
             // tagLayout = new AprilTagFieldLayout("2022-taglayout.json");
@@ -241,6 +262,8 @@ public class RobotContainer {
         visionSim.update(drivetrain.getPerfPose());
         field.getObject("Noisy Robot").setPose(drivetrain.getPerfPose());
 
+        SmartDashboard.putNumberArray("RobotPose", LogUtil.toPoseArray2d(drivetrain.getPose()));
+
         var visCorners = new ArrayList<TargetCorner>();
         var knownVisTags = new ArrayList<AprilTag>();
         var relVisTagsPnP = new ArrayList<AprilTag>();
@@ -288,7 +311,12 @@ public class RobotContainer {
                     .transformBy(robotToCamera.inverse())
                     .toPose2d();
                 
-                if(correcting) drivetrain.addVisionMeasurement(bestPose, result.getLatencyMillis()/1000.0);
+                var ambiguity = target.getPoseAmbiguity();
+
+                SmartDashboard.putNumber(camera.getName() + "/single/ambiguity", ambiguity);
+                // if(correcting) drivetrain.addVisionMeasurement(bestPose, result.getLatencyMillis()/1000.0);
+                
+                // if(ambiguity < 0.1 && ambiguity > -0.1) drivetrain.addVisionMeasurement(bestPose, result.getLatencyMillis()/1000.0);
 
                 bestPoses.add(bestPose);
                 altPoses.add(
@@ -311,16 +339,24 @@ public class RobotContainer {
                     visCorners,
                     knownVisTags
                 );
-                var best = new Pose3d()
-                    .plus(pnpResults.best) // field-to-camera
-                    .plus(robotToCamera.inverse()); // field-to-robot
-                var alt = new Pose3d()
-                    .plus(pnpResults.alt) // field-to-camera
-                    .plus(robotToCamera.inverse()); // field-to-robot
-                bestPoses.clear();
-                altPoses.clear();
-                bestPoses.add(best.toPose2d());
-                altPoses.add(alt.toPose2d());
+                SmartDashboard.putNumber(camera.getName() + "/multi/ambiguity", pnpResults.ambiguity);
+                SmartDashboard.putNumber(camera.getName() + "/multi/bestErr", pnpResults.bestReprojErr);
+                SmartDashboard.putNumber(camera.getName() + "/multi/altErr", pnpResults.altReprojErr);
+
+                if (pnpResults.bestReprojErr < 0.2) {
+                    var best = new Pose3d()
+                        .plus(pnpResults.best) // field-to-camera
+                        .plus(robotToCamera.inverse()); // field-to-robot
+                    var alt = new Pose3d()
+                        .plus(pnpResults.alt) // field-to-camera
+                        .plus(robotToCamera.inverse()); // field-to-robot
+                    bestPoses.clear();
+                    altPoses.clear();
+                    bestPoses.add(best.toPose2d());
+                    altPoses.add(alt.toPose2d());
+                
+                    drivetrain.addVisionMeasurement(best.toPose2d(), result.getLatencyMillis()/1000.0);
+                }
                 // testPoses.add(best.toPose2d());
             }
         }
@@ -347,6 +383,10 @@ public class RobotContainer {
             field.getObject("bestPoses").setPoses(bestPoses);
             field.getObject("altPoses").setPoses(altPoses);
             field.getObject("testPoses").setPoses(testPoses);
+            if (bestPoses != null && bestPoses.size() > 0 && altPoses != null && altPoses.size() > 0) {
+                SmartDashboard.putNumberArray("BestPose", LogUtil.toPoseArray2d(bestPoses.get(0)));
+                SmartDashboard.putNumberArray("AltPose", LogUtil.toPoseArray2d(altPoses.get(0)));
+            }
         }
     }
 

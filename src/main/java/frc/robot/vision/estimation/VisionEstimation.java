@@ -4,11 +4,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import org.photonvision.CameraProperties;
-import org.photonvision.TargetModel;
 import org.photonvision.targeting.PhotonTrackedTarget;
 import org.photonvision.targeting.TargetCorner;
-import org.photonvision.util.OpenCVHelp;
+import org.photonvision.vision.estimation.CameraProperties;
+import org.photonvision.vision.estimation.OpenCVHelp;
+import org.photonvision.vision.estimation.TargetModel;
 
 import edu.wpi.first.apriltag.AprilTag;
 import edu.wpi.first.apriltag.AprilTagFieldLayout;
