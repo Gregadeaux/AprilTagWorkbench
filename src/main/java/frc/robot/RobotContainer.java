@@ -281,7 +281,7 @@ public class RobotContainer {
             var robotToCamera = visionSim.getRobotToCamera(cameraSim).get();
             var result = camera.getLatestResult();
 
-            if(result.getTimestampSeconds() == lastResults.get(i).getTimestampSeconds()) continue;
+            if(result.getTimestampSeconds() == lastResults.get(i).getTimestampSeconds() || !result.hasTargets()) continue;
             else {
                 lastResults.set(i, result);
                 updated = true;
@@ -374,6 +374,7 @@ public class RobotContainer {
             );
             var estRobotPose = estTrf.trf.apply(new Pose3d());
             testPoses.add(estRobotPose.toPose2d());
+            
             SmartDashboard.putNumberArray(
                 "EstRobotPose3d",
                 LogUtil.toPoseArray3d(estRobotPose)
@@ -383,10 +384,6 @@ public class RobotContainer {
             field.getObject("bestPoses").setPoses(bestPoses);
             field.getObject("altPoses").setPoses(altPoses);
             field.getObject("testPoses").setPoses(testPoses);
-            if (bestPoses != null && bestPoses.size() > 0 && altPoses != null && altPoses.size() > 0) {
-                SmartDashboard.putNumberArray("BestPose", LogUtil.toPoseArray2d(bestPoses.get(0)));
-                SmartDashboard.putNumberArray("AltPose", LogUtil.toPoseArray2d(altPoses.get(0)));
-            }
         }
     }
 
