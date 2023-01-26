@@ -316,7 +316,7 @@ public class RobotContainer {
                 SmartDashboard.putNumber(camera.getName() + "/single/ambiguity", ambiguity);
                 // if(correcting) drivetrain.addVisionMeasurement(bestPose, result.getLatencyMillis()/1000.0);
                 
-                // if(ambiguity < 0.1 && ambiguity > -0.1) drivetrain.addVisionMeasurement(bestPose, result.getLatencyMillis()/1000.0);
+                // if(ambiguity < 0.2 && ambiguity > -0.2) drivetrain.addVisionMeasurement(bestPose, result.getLatencyMillis()/1000.0);
 
                 bestPoses.add(bestPose);
                 altPoses.add(
@@ -342,6 +342,7 @@ public class RobotContainer {
                 SmartDashboard.putNumber(camera.getName() + "/multi/ambiguity", pnpResults.ambiguity);
                 SmartDashboard.putNumber(camera.getName() + "/multi/bestErr", pnpResults.bestReprojErr);
                 SmartDashboard.putNumber(camera.getName() + "/multi/altErr", pnpResults.altReprojErr);
+                SmartDashboard.putNumberArray(camera.getName() + "/multi/pose", LogUtil.toPoseArray2d(new Pose3d().plus(pnpResults.best).plus(robotToCamera.inverse()).toPose2d()));
 
                 if (pnpResults.bestReprojErr < 0.2) {
                     var best = new Pose3d()

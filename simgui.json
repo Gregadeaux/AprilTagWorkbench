@@ -178,6 +178,12 @@
       "open": false
     },
     "transitory": {
+      "CameraPublisher": {
+        "front-right-raw": {
+          "open": true
+        },
+        "open": true
+      },
       "photonvision": {
         "front": {
           "open": true
