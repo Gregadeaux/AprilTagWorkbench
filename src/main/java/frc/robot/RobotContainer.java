@@ -17,6 +17,7 @@ import org.photonvision.PhotonCamera;
 import org.photonvision.PhotonCameraSim;
 import org.photonvision.VisionSystemSim;
 import org.photonvision.targeting.PhotonPipelineResult;
+import org.photonvision.targeting.PhotonTrackedTarget;
 import org.photonvision.targeting.TargetCorner;
 import org.photonvision.vision.estimation.CameraProperties;
 
@@ -41,6 +42,7 @@ import frc.robot.common.OCXboxController;
 import frc.robot.subsystems.drivetrain.SwerveDrive;
 import frc.robot.util.LogUtil;
 import frc.robot.vision.estimation.VisionEstimation;
+import frc.robot.vision.estimation.VisionEstimation.PNPResults;
 
 public class RobotContainer {
     private final SwerveDrive drivetrain = new SwerveDrive();
@@ -264,126 +266,47 @@ public class RobotContainer {
 
         SmartDashboard.putNumberArray("RobotPose", LogUtil.toPoseArray2d(drivetrain.getPose()));
 
-        var visCorners = new ArrayList<TargetCorner>();
-        var knownVisTags = new ArrayList<AprilTag>();
-        var relVisTagsPnP = new ArrayList<AprilTag>();
-        var relVisTagsTrig = new ArrayList<AprilTag>();
+        final List<TargetCorner> corners = new ArrayList<TargetCorner>();
+        final List<AprilTag> foundTags = new ArrayList<AprilTag>();
 
-        var bestPoses = new ArrayList<Pose2d>();
-        var altPoses = new ArrayList<Pose2d>();
-        var testPoses = new ArrayList<Pose2d>();
+        for(int i = 0; i < this.cameras.size(); i++) {
+            final PhotonCamera camera = this.cameras.get(i);
+            final PhotonPipelineResult result = camera.getLatestResult();
+            if (!result.hasTargets()) continue;
 
-        boolean updated = false;
-        for(int i = 0; i < cameras.size(); i++) {
-            var camera = cameras.get(i);
-            if(visionSim.getCameraSim(camera.getName()).isEmpty()) continue;
-            var cameraSim = visionSim.getCameraSim(camera.getName()).get();
-            var robotToCamera = visionSim.getRobotToCamera(cameraSim).get();
-            var result = camera.getLatestResult();
+            corners.clear();
+            foundTags.clear();
 
-            if(result.getTimestampSeconds() == lastResults.get(i).getTimestampSeconds() || !result.hasTargets()) continue;
-            else {
-                lastResults.set(i, result);
-                updated = true;
-            }
+            final List<PhotonTrackedTarget> targets = result.getTargets();
 
-            for(var target : result.getTargets()) {
-                visCorners.addAll(target.getDetectedCorners());
-                Pose3d tagPose = tagLayout.getTagPose(target.getFiducialId()).get();
-                // actual layout poses of visible tags
-                knownVisTags.add(new AprilTag(target.getFiducialId(), tagPose));
-                Transform3d camToBest = target.getBestCameraToTarget();
-                // tags estimated relative to robot
-                relVisTagsPnP.add(new AprilTag(
-                    target.getFiducialId(),
-                    new Pose3d().plus(robotToCamera).plus(camToBest)
+            targets.stream().forEach( target -> {
+                final int fiducialId = target.getFiducialId();
+
+                corners.addAll(target.getDetectedCorners());
+                foundTags.add(new AprilTag(
+                    fiducialId,
+                    this.tagLayout.getTagPose(fiducialId).get()
                 ));
-                var undistortedTarget = target;
-                relVisTagsTrig.addAll(VisionEstimation.estimateTagsTrig(
-                    robotToCamera,
-                    List.of(undistortedTarget),
-                    tagLayout
-                ));
-                Transform3d camToAlt = target.getAlternateCameraToTarget();
+            });
 
-                var bestPose = tagPose
-                    .transformBy(camToBest.inverse())
-                    .transformBy(robotToCamera.inverse())
-                    .toPose2d();
-                
-                var ambiguity = target.getPoseAmbiguity();
+            if (targets.size() > 1) {
+                var cameraSim = visionSim.getCameraSim(camera.getName()).get();
+                var robotToCamera = visionSim.getRobotToCamera(cameraSim).get();
+                final CameraProperties cameraProp = cameraSim.prop;
+                final PNPResults pnpResults = VisionEstimation.estimateCamPosePNP(cameraProp, corners, foundTags);
+                final Transform3d robotToCameraPose = robotToCamera;
 
-                SmartDashboard.putNumber(camera.getName() + "/single/ambiguity", ambiguity);
-                // if(correcting) drivetrain.addVisionMeasurement(bestPose, result.getLatencyMillis()/1000.0);
-                
-                // if(ambiguity < 0.1 && ambiguity > -0.1) drivetrain.addVisionMeasurement(bestPose, result.getLatencyMillis()/1000.0);
-
-                bestPoses.add(bestPose);
-                altPoses.add(
-                    tagPose
-                        .transformBy(camToAlt.inverse())
-                        .transformBy(robotToCamera.inverse())
-                        .toPose2d()
-                );
-                testPoses.add(
-                    new Pose3d(drivetrain.getPerfPose())
-                        .plus(new Transform3d(new Pose3d(), relVisTagsTrig.get(relVisTagsTrig.size()-1).pose))
-                        .toPose2d()
-                );
-            }
-
-            // multi-target solvePNP
-            if(result.getTargets().size() > 1) {
-                var pnpResults = VisionEstimation.estimateCamPosePNP(
-                    cameraSim.prop,
-                    visCorners,
-                    knownVisTags
-                );
                 SmartDashboard.putNumber(camera.getName() + "/multi/ambiguity", pnpResults.ambiguity);
                 SmartDashboard.putNumber(camera.getName() + "/multi/bestErr", pnpResults.bestReprojErr);
                 SmartDashboard.putNumber(camera.getName() + "/multi/altErr", pnpResults.altReprojErr);
 
-                if (pnpResults.bestReprojErr < 0.2) {
-                    var best = new Pose3d()
-                        .plus(pnpResults.best) // field-to-camera
-                        .plus(robotToCamera.inverse()); // field-to-robot
-                    var alt = new Pose3d()
-                        .plus(pnpResults.alt) // field-to-camera
-                        .plus(robotToCamera.inverse()); // field-to-robot
-                    bestPoses.clear();
-                    altPoses.clear();
-                    bestPoses.add(best.toPose2d());
-                    altPoses.add(alt.toPose2d());
-                
-                    drivetrain.addVisionMeasurement(best.toPose2d(), result.getLatencyMillis()/1000.0);
+                if(pnpResults.bestReprojErr < 0.15) {
+                    final Pose3d pose = new Pose3d()
+                        .plus(pnpResults.best)
+                        .plus(robotToCameraPose.inverse());
+                    drivetrain.addVisionMeasurement(pose.toPose2d(), result.getLatencyMillis() / 1000.0);
                 }
-                // testPoses.add(best.toPose2d());
             }
-        }
-        // multi-target SVD
-        if(knownVisTags.size() > 0) {
-            // var estTrf = VisionEstimation.estimateTransformLS(
-            //     relVisTagsPnP,
-            //     knownVisTags,
-            //     true
-            // );
-            var estTrf = VisionEstimation.estimateTransformLS(
-                relVisTagsTrig,
-                knownVisTags,
-                false
-            );
-            var estRobotPose = estTrf.trf.apply(new Pose3d());
-            testPoses.add(estRobotPose.toPose2d());
-            
-            SmartDashboard.putNumberArray(
-                "EstRobotPose3d",
-                LogUtil.toPoseArray3d(estRobotPose)
-            );
-        }
-        if(updated) {
-            field.getObject("bestPoses").setPoses(bestPoses);
-            field.getObject("altPoses").setPoses(altPoses);
-            field.getObject("testPoses").setPoses(testPoses);
         }
     }
 

@@ -77,7 +77,7 @@ public class SwerveDrive extends SubsystemBase {
         thetaController.setTolerance(kThetaPositionTolerance, kThetaVelocityTolerance);
 
         var stateStdDevs = VecBuilder.fill(0.1, 0.1, 0.1);
-        var visionStdDevs = VecBuilder.fill(1, 1, 0.1);
+        var visionStdDevs = VecBuilder.fill(1, 1, Math.toRadians(30));
         poseEstimator = new SwerveDrivePoseEstimator(
             kinematics,
             getGyroYaw(),
@@ -87,6 +87,7 @@ public class SwerveDrive extends SubsystemBase {
             visionStdDevs
         );
         perfOdometry = new SwerveDriveOdometry(kinematics, getPerfGyroYaw(), getPerfModulePositions());
+        perfOdometry.resetPosition(perfGyroAngle, getModulePositions(), new Pose2d(5, 5, Rotation2d.fromDegrees(135)));
 
         gyroSim = new ADXRS450_GyroSim(gyro);
     }
